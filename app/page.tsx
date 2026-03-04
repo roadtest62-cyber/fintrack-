@@ -95,6 +95,7 @@ function IconWallet() { return <svg width="20" height="20" viewBox="0 0 20 20" f
 function IconCheck() { return <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" /><path d="M6.5 10l2.5 2.5L13.5 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
 function IconClock() { return <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" /><path d="M10 5.5V10l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>; }
 function IconCloud() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4.5 12.5h7a3 3 0 000-6 3.5 3.5 0 00-7 .5 2.5 2.5 0 000 5.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>; }
+function IconMenu() { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>; }
 
 function getBadgeClass(loai: string): string {
   switch (loai) {
@@ -129,6 +130,7 @@ export default function Home() {
   const [editTeams, setEditTeams] = useState<TeamData[]>([]);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("syncing");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mobileMenu, setMobileMenu] = useState(false);
 
   // ===== FIREBASE REAL-TIME SYNC =====
   // Listen to rows collection
@@ -441,8 +443,16 @@ export default function Home() {
 
   return (
     <div className="app-layout">
+      {/* Mobile Menu Toggle */}
+      <button className="mobile-menu-btn" onClick={() => setMobileMenu(!mobileMenu)}>
+        {mobileMenu ? <IconClose /> : <IconMenu />}
+      </button>
+
+      {/* Mobile Overlay */}
+      {mobileMenu && <div className="mobile-overlay" onClick={() => setMobileMenu(false)} />}
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
         <div className="sidebar-logo">
           <div className="logo-icon"><IconReceipt /></div>
           <div className="logo-text">
@@ -456,13 +466,13 @@ export default function Home() {
             <span className="nav-label">TEAM</span>
             <button className="nav-settings-btn" onClick={openSettings} title="Quản lý Team"><IconSettings /></button>
           </div>
-          <button className={`nav-item ${activeTeam === "all" ? "active" : ""}`} onClick={() => setActiveTeam("all")}>
+          <button className={`nav-item ${activeTeam === "all" ? "active" : ""}`} onClick={() => { setActiveTeam("all"); setMobileMenu(false); }}>
             <div className="nav-icon"><IconChart /></div>
             <span>Tổng quan</span>
             <span className="nav-badge">{teamStats["all"]?.count || 0}</span>
           </button>
           {teams.map((team) => (
-            <button key={team.value} className={`nav-item ${activeTeam === team.value ? "active" : ""}`} onClick={() => setActiveTeam(team.value)}>
+            <button key={team.value} className={`nav-item ${activeTeam === team.value ? "active" : ""}`} onClick={() => { setActiveTeam(team.value); setMobileMenu(false); }}>
               <div className="nav-dot" style={{ background: team.color }} />
               <span>{team.label}</span>
               <span className="nav-badge">{teamStats[team.value]?.count || 0}</span>
