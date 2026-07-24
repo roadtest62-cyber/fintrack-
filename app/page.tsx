@@ -198,6 +198,33 @@ export default function Home() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
+  const addNewTeam = async () => {
+    const newTeam: TeamData = {
+      value: `Team-${generateId()}`,
+      label: `Team mới`,
+      color: "#94a3b8",
+      gradient: "linear-gradient(135deg, #64748b, #94a3b8)"
+    };
+    const updatedTeams = [...teams, newTeam];
+    setTeams(updatedTeams);
+    await saveTeamsToFirebase(updatedTeams);
+    showToast("Đã thêm Team mới. Hãy đổi tên và màu sắc!");
+    
+    // Auto open settings to let user rename it
+    setEditTeams(updatedTeams.map(t => ({ ...t })));
+    setShowSettings(true);
+  };
+
+  const removeTeam = (index: number) => {
+    const teamToRemove = editTeams[index];
+    const hasData = rows.some(r => r.team === teamToRemove.value);
+    if (hasData) {
+      showToast("Không thể xóa Team đang có dữ liệu!", "error");
+      return;
+    }
+    setEditTeams(prev => prev.filter((_, i) => i !== index));
+  };
+
   const calcSoTien = (soLuong: number | "", donGia: number | ""): number => {
     const sl = typeof soLuong === "number" ? soLuong : 0;
     const dg = typeof donGia === "number" ? donGia : 0;
@@ -472,11 +499,14 @@ export default function Home() {
             <span className="nav-badge">{teamStats["all"]?.count || 0}</span>
           </button>
           {teams.map((team) => (
-            <button key={team.value} className={`nav-item ${activeTeam === team.value ? "active" : ""}`} onClick={() => { setActiveTeam(team.value); setMobileMenu(false); }}>
-              <div className="nav-dot" style={{ background: team.color }} />
-              <span>{team.label}</span>
-              <span className="nav-badge">{teamStats[team.value]?.count || 0}</span>
-            </button>
+            <div key={team.value} className="nav-item-wrapper">
+              <button className={`nav-item ${activeTeam === team.value ? "active" : ""}`} onClick={() => { setActiveTeam(team.value); setMobileMenu(false); }}>
+                <div className="nav-dot" style={{ background: team.color }} />
+                <span>{team.label}</span>
+                <span className="nav-badge">{teamStats[team.value]?.count || 0}</span>
+              </button>
+              <button className="nav-item-edit" onClick={openSettings} title="Chỉnh sửa Team"><IconEdit /></button>
+            </div>
           ))}
         </nav>
 
@@ -503,8 +533,8 @@ export default function Home() {
       <main className="main-content">
         <header className="top-bar">
           <div>
-            <h1 className="page-title">{activeTeam === "all" ? "Tổng quan" : activeTeam}</h1>
-            <p className="page-subtitle">{activeTeam === "all" ? "Quản lý tất cả đội nhóm" : `Quản lý dữ liệu ${activeTeam}`}</p>
+            <h1 className="page-title">{activeTeam === "all" ? "Tổng quan" : (teams.find(t => t.value === activeTeam)?.label || activeTeam)}</h1>
+            <p className="page-subtitle">{activeTeam === "all" ? "Quản lý tất cả đội nhóm" : `Quản lý dữ liệu ${teams.find(t => t.value === activeTeam)?.label || activeTeam}`}</p>
           </div>
           <div className="top-bar-actions">
             {rows.length > 0 && <button className="btn btn-ghost btn-ghost-danger" onClick={() => setConfirmDeleteAll(true)}><IconTrash /> Xóa tất cả</button>}
@@ -627,6 +657,10 @@ export default function Home() {
                       <span className="team-card-name">{team.label}</span>
                     </button>
                   ))}
+                  <button type="button" className="team-card add-team-card" onClick={addNewTeam}>
+                    <div className="team-card-dot" style={{ background: "var(--border)", display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}><IconPlus /></div>
+                    <span className="team-card-name">Thêm Team</span>
+                  </button>
                 </div>
               </div>
               <div className="form-section">
@@ -710,8 +744,12 @@ export default function Home() {
                     <input type="text" className="form-input" value={team.label}
                       onChange={(e) => updateTeamField(index, "label", e.target.value)} />
                   </div>
+                  <button className="action-btn delete" style={{ marginBottom: '4px' }} onClick={() => removeTeam(index)} title="Xóa Team"><IconTrash /></button>
                 </div>
               ))}
+              <button className="btn btn-ghost" style={{ width: '100%', marginBottom: '20px', borderStyle: 'dashed' }} onClick={addNewTeam}>
+                <IconPlus /> Thêm Team mới
+              </button>
               <div className="settings-info">
                 <div className="info-icon"><IconCloud /></div>
                 <div>
