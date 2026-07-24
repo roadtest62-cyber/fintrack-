@@ -414,6 +414,7 @@ export default function Home() {
     if (mapping[activeTeam]) { setActiveTeam(mapping[activeTeam]); }
 
     await saveTeamsToFirebase(editTeams);
+    setTeams(editTeams);
     setShowSettings(false);
     showToast("Đã cập nhật Team thành công");
   };
@@ -535,6 +536,10 @@ export default function Home() {
           <div>
             <h1 className="page-title">{activeTeam === "all" ? "Tổng quan" : (teams.find(t => t.value === activeTeam)?.label || activeTeam)}</h1>
             <p className="page-subtitle">{activeTeam === "all" ? "Quản lý tất cả đội nhóm" : `Quản lý dữ liệu ${teams.find(t => t.value === activeTeam)?.label || activeTeam}`}</p>
+            <div className="update-banner">
+              <span className="update-pill">Bản update</span>
+              <p>Giao diện mới, tối ưu thao tác và trực quan hơn cho công việc tài chính.</p>
+            </div>
           </div>
           <div className="top-bar-actions">
             {rows.length > 0 && <button className="btn btn-ghost btn-ghost-danger" onClick={() => setConfirmDeleteAll(true)}><IconTrash /> Xóa tất cả</button>}
