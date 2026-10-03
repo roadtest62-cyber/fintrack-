@@ -30,14 +30,7 @@ interface TeamData {
   gradient: string;
 }
 
-const LOAI_AN_PHAM_OPTIONS = [
-  { value: "", label: "-- Chọn --" },
-  { value: "Ảnh CP", label: "Ảnh CP" },
-  { value: "Ảnh TK", label: "Ảnh TK" },
-  { value: "VIDEO", label: "VIDEO" },
-  { value: "VIDEO + TK", label: "VIDEO + TK" },
-  { value: "Ảnh Bill", label: "Ảnh Bill" },
-];
+const DEFAULT_PRODUCT_TYPES = ["Ảnh CP", "Ảnh TK", "VIDEO", "VIDEO + TK", "Ảnh Bill"];
 
 const DON_GIA_PRESETS = [
   { value: 60000, label: "60.000" },
@@ -99,14 +92,10 @@ function IconCloud() { return <svg width="16" height="16" viewBox="0 0 16 16" fi
 function IconMenu() { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>; }
 
 function getBadgeClass(loai: string): string {
-  switch (loai) {
-    case "Ảnh CP": return "badge badge-red";
-    case "Ảnh TK": return "badge badge-orange";
-    case "VIDEO": return "badge badge-blue";
-    case "VIDEO + TK": return "badge badge-purple";
-    case "Ảnh Bill": return "badge badge-teal";
-    default: return "badge";
-  }
+  if (!loai) return "badge";
+  const hash = loai.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const classes = ["badge-red", "badge-orange", "badge-blue", "badge-purple", "badge-teal"];
+  return "badge " + classes[hash % classes.length];
 }
 
 // Firebase collections
@@ -127,6 +116,8 @@ export default function Home() {
   const [rows, setRows] = useState<RowData[]>([]);
   const [deletedRows, setDeletedRows] = useState<RowData[]>([]);
   const [teams, setTeams] = useState<TeamData[]>(DEFAULT_TEAMS);
+  const [productTypes, setProductTypes] = useState<string[]>(DEFAULT_PRODUCT_TYPES);
+  const [editProductTypes, setEditProductTypes] = useState<string[]>([]);
   const [activeTeam, setActiveTeam] = useState<string>("all");
   const [showModal, setShowModal] = useState(false);
   const [modalData, setModalData] = useState<RowData>(createEmptyRow());
@@ -199,9 +190,8 @@ export default function Home() {
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (data.teams && Array.isArray(data.teams)) {
-            setTeams(data.teams);
-          }
+          if (data.teams && Array.isArray(data.teams)) { setTeams(data.teams); }
+          if (data.productTypes && Array.isArray(data.productTypes)) { setProductTypes(data.productTypes); }
         }
       },
       (error) => {
@@ -218,6 +208,7 @@ export default function Home() {
     if (isLoaded) {
       localStorage.setItem("tinhtien_data", JSON.stringify(rows));
       localStorage.setItem("tinhtien_teams", JSON.stringify(teams));
+      localStorage.setItem("tinhtien_productTypes", JSON.stringify(productTypes));
     }
   }, [rows, teams, isLoaded]);
 
@@ -226,6 +217,10 @@ export default function Home() {
     setToasts((prev) => [...prev, { id, message, type, actionLabel: actionConfig?.label, onAction: actionConfig?.action }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
   }, []);
+
+  const addNewProductType = () => {
+    setEditProductTypes(prev => [...prev, "Loại ấn phẩm mới"]);
+  };
 
   const addNewTeam = async () => {
     const newTeam: TeamData = {
@@ -236,7 +231,7 @@ export default function Home() {
     };
     const updatedTeams = [...teams, newTeam];
     setTeams(updatedTeams);
-    await saveTeamsToFirebase(updatedTeams);
+    await saveSettingsToFirebase(updatedTeams, productTypes);
     showToast("Đã thêm Team mới. Hãy đổi tên và màu sắc!");
     
     // Auto open settings to let user rename it
@@ -381,12 +376,12 @@ export default function Home() {
     }
   };
 
-  const saveTeamsToFirebase = async (teamsData: TeamData[]) => {
+  const saveSettingsToFirebase = async (teamsData: TeamData[], productTypesData: string[]) => {
     try {
-      await setDoc(doc(db, SETTINGS_COLLECTION, SETTINGS_DOC), { teams: teamsData });
+      await setDoc(doc(db, SETTINGS_COLLECTION, SETTINGS_DOC), { teams: teamsData, productTypes: productTypesData });
     } catch (error) {
-      console.error("Save teams error:", error);
-      showToast("Lỗi lưu cài đặt Team!", "error");
+      console.error("Save error:", error);
+      showToast("Lỗi lưu cài đặt!", "error");
     }
   };
 
@@ -491,6 +486,7 @@ export default function Home() {
   // ===== TEAM MANAGEMENT =====
   const openSettings = () => {
     setEditTeams(teams.map(t => ({ ...t })));
+    setEditProductTypes([...productTypes]);
     setShowSettings(true);
   };
 
@@ -503,7 +499,7 @@ export default function Home() {
     });
   };
 
-  const saveTeamChanges = async () => {
+  const saveSettingsChanges = async () => {
     const mapping: Record<string, string> = {};
     teams.forEach((oldTeam, i) => {
       if (editTeams[i] && oldTeam.value !== editTeams[i].value) {
@@ -525,10 +521,11 @@ export default function Home() {
 
     if (mapping[activeTeam]) { setActiveTeam(mapping[activeTeam]); }
 
-    await saveTeamsToFirebase(editTeams);
+    await saveSettingsToFirebase(editTeams, editProductTypes);
     setTeams(editTeams);
+    setProductTypes(editProductTypes);
     setShowSettings(false);
-    showToast("Đã cập nhật Team thành công");
+    showToast("Đã lưu cài đặt thành công");
   };
 
   // ===== BACKUP & RESTORE =====
@@ -560,7 +557,7 @@ export default function Home() {
           await batch.commit();
 
           if (data.teams && Array.isArray(data.teams)) {
-            await saveTeamsToFirebase(data.teams);
+            await saveSettingsToFirebase(data.teams, data.productTypes || productTypes);
           }
           showToast(`Đã khôi phục ${data.rows.length} mục dữ liệu`);
         } else {
@@ -708,7 +705,7 @@ export default function Home() {
           <div className="search-box"><IconSearch /><input type="text" placeholder="Tìm kiếm..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
           <select className="filter-select" value={filterLoai} onChange={(e) => setFilterLoai(e.target.value)}>
             <option value="">Tất cả loại ấn phẩm</option>
-            {LOAI_AN_PHAM_OPTIONS.slice(1).map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
+            {productTypes.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
           </select>
         </div>
 
@@ -821,9 +818,9 @@ export default function Home() {
               <div className="form-section">
                 <label className="form-label">Loại ấn phẩm <span className="required">*</span></label>
                 <div className="chip-group">
-                  {LOAI_AN_PHAM_OPTIONS.slice(1).map((opt) => (
-                    <button key={opt.value} type="button" className={`chip ${modalData.loaiAnPham === opt.value ? "selected" : ""}`}
-                      onClick={() => handleModalChange("loaiAnPham", opt.value)}>{opt.label}</button>
+                  {productTypes.map((opt) => (
+                    <button key={opt} type="button" className={`chip ${modalData.loaiAnPham === opt ? "selected" : ""}`}
+                      onClick={() => handleModalChange("loaiAnPham", opt)}>{opt}</button>
                   ))}
                 </div>
               </div>
@@ -876,11 +873,14 @@ export default function Home() {
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Quản lý Team</h2>
+              <h2>Cài đặt ứng dụng</h2>
               <button className="modal-close" onClick={() => setShowSettings(false)}><IconClose /></button>
             </div>
             <div className="modal-body">
-              <p className="settings-desc">Chỉnh sửa tên và màu sắc cho từng Team. Dữ liệu sẽ tự động cập nhật trên tất cả thiết bị.</p>
+              <p className="settings-desc">Quản lý các lựa chọn cho Ứng dụng. Dữ liệu sẽ tự động cập nhật trên tất cả thiết bị.</p>
+              
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '1rem', color: 'var(--text-white)', marginBottom: '12px' }}>1. Quản lý Team</h3>
               {editTeams.map((team, index) => (
                 <div key={index} className="team-edit-row">
                   <div className="team-edit-color">
@@ -899,8 +899,29 @@ export default function Home() {
                 </div>
               ))}
               <button className="btn btn-ghost" style={{ width: '100%', marginBottom: '20px', borderStyle: 'dashed' }} onClick={addNewTeam}>
-                <IconPlus /> Thêm Team mới
-              </button>
+                  <IconPlus /> Thêm Team mới
+                </button>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '1rem', color: 'var(--text-white)', marginBottom: '12px' }}>2. Loại ấn phẩm</h3>
+                {editProductTypes.map((type, index) => (
+                  <div key={index} className="team-edit-row">
+                    <div className="team-edit-field">
+                      <input type="text" className="form-input" value={type}
+                        onChange={(e) => {
+                          const newArr = [...editProductTypes];
+                          newArr[index] = e.target.value;
+                          setEditProductTypes(newArr);
+                        }} />
+                    </div>
+                    <button className="action-btn delete" style={{ marginBottom: '4px' }} onClick={() => setEditProductTypes(prev => prev.filter((_, i) => i !== index))} title="Xóa loại ấn phẩm"><IconTrash /></button>
+                  </div>
+                ))}
+                <button className="btn btn-ghost" style={{ width: '100%', borderStyle: 'dashed' }} onClick={addNewProductType}>
+                  <IconPlus /> Thêm Loại ấn phẩm
+                </button>
+              </div>
               <div className="settings-info">
                 <div className="info-icon"><IconCloud /></div>
                 <div>
@@ -911,7 +932,7 @@ export default function Home() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowSettings(false)}>Hủy</button>
-              <button className="btn btn-primary" onClick={saveTeamChanges}>Lưu thay đổi</button>
+              <button className="btn btn-primary" onClick={saveSettingsChanges}>Lưu thay đổi</button>
             </div>
           </div>
         </div>
