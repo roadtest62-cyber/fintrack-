@@ -86,6 +86,7 @@ function IconUpload() { return <svg width="16" height="16" viewBox="0 0 16 16" f
 function IconSearch() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" /><path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>; }
 function IconEdit() { return <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M10.5 1.5l2 2L4.5 11.5H2.5v-2l8-8z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>; }
 function IconTrash() { return <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 4h8l-.7 7.3c-.05.4-.4.7-.8.7H4.5c-.4 0-.75-.3-.8-.7L3 4zM5.5 6.5v3M8.5 6.5v3M2 4h10M5.5 4V2.5h3V4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
+function IconUndo() { return <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 7v-3h3M3 4l3.5 3.5C8 9 10.5 9 12 7.5 13.5 6 13.5 3.5 12 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
 function IconClose() { return <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>; }
 function IconSettings() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3" /><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>; }
 function IconSave() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M12.5 14H3.5a1 1 0 01-1-1V3a1 1 0 011-1h7l3 3v8a1 1 0 01-1 1z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /><path d="M5 14v-4h6v4M5 2v3h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
@@ -110,11 +111,21 @@ function getBadgeClass(loai: string): string {
 
 // Firebase collections
 const ROWS_COLLECTION = "rows";
+const DELETED_COLLECTION = "deleted_rows";
 const SETTINGS_DOC = "app_settings";
 const SETTINGS_COLLECTION = "settings";
 
+interface ToastItem {
+  id: string;
+  message: string;
+  type: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
 export default function Home() {
   const [rows, setRows] = useState<RowData[]>([]);
+  const [deletedRows, setDeletedRows] = useState<RowData[]>([]);
   const [teams, setTeams] = useState<TeamData[]>(DEFAULT_TEAMS);
   const [activeTeam, setActiveTeam] = useState<string>("all");
   const [showModal, setShowModal] = useState(false);
@@ -122,7 +133,7 @@ export default function Home() {
   const [isEditModal, setIsEditModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterLoai, setFilterLoai] = useState("");
-  const [toasts, setToasts] = useState<{ id: string; message: string; type: string }[]>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -163,6 +174,24 @@ export default function Home() {
     return () => unsub();
   }, []);
 
+  // Listen to deleted_rows collection (Trash)
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, DELETED_COLLECTION),
+      (snapshot) => {
+        const data: RowData[] = [];
+        snapshot.forEach((docSnap) => {
+          data.push(docSnap.data() as RowData);
+        });
+        setDeletedRows(data);
+      },
+      (error) => {
+        console.error("Deleted rows sync error:", error);
+      }
+    );
+    return () => unsub();
+  }, []);
+
   // Listen to settings (teams)
   useEffect(() => {
     const unsub = onSnapshot(
@@ -192,10 +221,10 @@ export default function Home() {
     }
   }, [rows, teams, isLoaded]);
 
-  const showToast = useCallback((message: string, type: string = "success") => {
+  const showToast = useCallback((message: string, type: string = "success", actionConfig?: { label: string; action: () => void }) => {
     const id = generateId();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+    setToasts((prev) => [...prev, { id, message, type, actionLabel: actionConfig?.label, onAction: actionConfig?.action }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
   }, []);
 
   const addNewTeam = async () => {
@@ -232,17 +261,19 @@ export default function Home() {
   };
 
   const filteredRows = useMemo(() => {
-    return rows.filter((row) => {
-      const matchTeam = activeTeam === "all" || row.team === activeTeam;
+    const sourceList = activeTeam === "trash" ? deletedRows : rows;
+    return sourceList.filter((row) => {
+      const matchTeam = activeTeam === "all" || activeTeam === "trash" || row.team === activeTeam;
       const matchSearch = !searchTerm || row.ngay.toLowerCase().includes(searchTerm.toLowerCase()) || row.ghiChu.toLowerCase().includes(searchTerm.toLowerCase()) || row.loaiAnPham.toLowerCase().includes(searchTerm.toLowerCase());
       const matchLoai = !filterLoai || row.loaiAnPham === filterLoai;
       return matchTeam && matchSearch && matchLoai;
     });
-  }, [rows, activeTeam, searchTerm, filterLoai]);
+  }, [rows, deletedRows, activeTeam, searchTerm, filterLoai]);
 
   const teamStats = useMemo(() => {
     const stats: Record<string, { count: number; total: number; paid: number; unpaid: number }> = {};
     stats["all"] = { count: rows.length, total: 0, paid: 0, unpaid: 0 };
+    stats["trash"] = { count: deletedRows.length, total: 0, paid: 0, unpaid: 0 };
     teams.forEach((t) => { stats[t.value] = { count: 0, total: 0, paid: 0, unpaid: 0 }; });
     rows.forEach((r) => {
       const money = calcSoTien(r.soLuong, r.donGia);
@@ -256,12 +287,18 @@ export default function Home() {
         if (r.thanhToan === "Chưa thanh toán") stats[r.team].unpaid++;
       }
     });
+    deletedRows.forEach((r) => {
+      const money = calcSoTien(r.soLuong, r.donGia);
+      stats["trash"].total += money;
+      if (r.thanhToan === "Đã thanh toán") stats["trash"].paid++;
+      if (r.thanhToan === "Chưa thanh toán") stats["trash"].unpaid++;
+    });
     return stats;
-  }, [rows, teams]);
+  }, [rows, deletedRows, teams]);
 
   const currentStats = teamStats[activeTeam] || { count: 0, total: 0, paid: 0, unpaid: 0 };
 
-  // ===== FIREBASE CRUD =====
+  // ===== FIREBASE CRUD & RECYCLE BIN =====
   const saveRowToFirebase = async (row: RowData) => {
     try {
       setSyncStatus("syncing");
@@ -274,15 +311,73 @@ export default function Home() {
     }
   };
 
-  const deleteRowFromFirebase = async (id: string) => {
+  const moveRowToTrash = async (id: string) => {
+    const rowToDelete = rows.find(r => r.id === id);
+    if (!rowToDelete) return;
     try {
       setSyncStatus("syncing");
-      await deleteDoc(doc(db, ROWS_COLLECTION, id));
+      const batch = writeBatch(db);
+      batch.set(doc(db, DELETED_COLLECTION, id), { ...rowToDelete, deletedAt: new Date().toISOString() });
+      batch.delete(doc(db, ROWS_COLLECTION, id));
+      await batch.commit();
       setSyncStatus("synced");
+      showToast("Đã chuyển mục vào Thùng rác", "success", {
+        label: "Hoàn tác",
+        action: () => restoreRowFromTrash(id)
+      });
     } catch (error) {
-      console.error("Delete error:", error);
+      console.error("Move to trash error:", error);
       setSyncStatus("error");
       showToast("Lỗi xóa dữ liệu!", "error");
+    }
+  };
+
+  const restoreRowFromTrash = async (id: string) => {
+    const rowToRestore = deletedRows.find(r => r.id === id) || rows.find(r => r.id === id);
+    if (!rowToRestore) return;
+    try {
+      setSyncStatus("syncing");
+      const batch = writeBatch(db);
+      const cleanRow = { ...rowToRestore };
+      delete (cleanRow as Record<string, unknown>).deletedAt;
+      batch.set(doc(db, ROWS_COLLECTION, id), cleanRow);
+      batch.delete(doc(db, DELETED_COLLECTION, id));
+      await batch.commit();
+      setSyncStatus("synced");
+      showToast("Đã khôi phục dữ liệu thành công!");
+    } catch (error) {
+      console.error("Restore error:", error);
+      setSyncStatus("error");
+      showToast("Lỗi khôi phục dữ liệu!", "error");
+    }
+  };
+
+  const permanentDeleteRow = async (id: string) => {
+    try {
+      setSyncStatus("syncing");
+      await deleteDoc(doc(db, DELETED_COLLECTION, id));
+      setSyncStatus("synced");
+      showToast("Đã xóa vĩnh viễn mục dữ liệu");
+    } catch (error) {
+      console.error("Permanent delete error:", error);
+      setSyncStatus("error");
+      showToast("Lỗi xóa vĩnh viễn!", "error");
+    }
+  };
+
+  const emptyTrash = async () => {
+    if (deletedRows.length === 0) return;
+    try {
+      setSyncStatus("syncing");
+      const batch = writeBatch(db);
+      deletedRows.forEach(r => batch.delete(doc(db, DELETED_COLLECTION, r.id)));
+      await batch.commit();
+      setSyncStatus("synced");
+      showToast(`Đã dọn sạch ${deletedRows.length} mục trong Thùng rác`);
+    } catch (error) {
+      console.error("Empty trash error:", error);
+      setSyncStatus("error");
+      showToast("Lỗi dọn thùng rác!", "error");
     }
   };
 
@@ -296,7 +391,7 @@ export default function Home() {
   };
 
   const openAddModal = () => {
-    const team = activeTeam !== "all" ? activeTeam : "";
+    const team = activeTeam !== "all" && activeTeam !== "trash" ? activeTeam : "";
     setModalData(createEmptyRow(team));
     setIsEditModal(false);
     setShowModal(true);
@@ -329,24 +424,41 @@ export default function Home() {
   };
 
   const handleDelete = (id: string) => setConfirmDelete(id);
+
   const confirmDeleteRow = async () => {
     if (confirmDelete) {
-      await deleteRowFromFirebase(confirmDelete);
-      showToast("Đã xóa thành công");
+      if (activeTeam === "trash") {
+        await permanentDeleteRow(confirmDelete);
+      } else {
+        await moveRowToTrash(confirmDelete);
+      }
       setConfirmDelete(null);
     }
   };
 
   const deleteAllRows = async () => {
+    if (activeTeam === "trash") {
+      await emptyTrash();
+      setConfirmDeleteAll(false);
+      return;
+    }
+
     const toDelete = activeTeam === "all" ? rows : rows.filter(r => r.team === activeTeam);
     if (toDelete.length === 0) return;
+
     try {
       setSyncStatus("syncing");
       const batch = writeBatch(db);
-      toDelete.forEach(r => batch.delete(doc(db, ROWS_COLLECTION, r.id)));
+      toDelete.forEach(r => {
+        batch.set(doc(db, DELETED_COLLECTION, r.id), { ...r, deletedAt: new Date().toISOString() });
+        batch.delete(doc(db, ROWS_COLLECTION, r.id));
+      });
       await batch.commit();
       setSyncStatus("synced");
-      showToast(`Đã xóa ${toDelete.length} mục`);
+      showToast(`Đã chuyển ${toDelete.length} mục vào Thùng rác`, "success", {
+        label: "Xem thùng rác",
+        action: () => setActiveTeam("trash")
+      });
     } catch (error) {
       console.error("Delete all error:", error);
       setSyncStatus("error");
@@ -509,6 +621,17 @@ export default function Home() {
               <button className="nav-item-edit" onClick={openSettings} title="Chỉnh sửa Team"><IconEdit /></button>
             </div>
           ))}
+
+          <div className="nav-section-header" style={{ marginTop: '16px' }}>
+            <span className="nav-label">HỆ THỐNG</span>
+          </div>
+          <button className={`nav-item ${activeTeam === "trash" ? "active" : ""}`} onClick={() => { setActiveTeam("trash"); setMobileMenu(false); }}>
+            <div className="nav-icon"><IconTrash /></div>
+            <span>Thùng rác</span>
+            <span className="nav-badge" style={deletedRows.length > 0 ? { background: "rgba(255,107,107,0.2)", color: "#ff6b6b" } : undefined}>
+              {deletedRows.length}
+            </span>
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -523,10 +646,10 @@ export default function Home() {
           </div>
           <div className="sidebar-backup">
             <button className="sidebar-btn" onClick={exportBackup} title="Sao lưu dữ liệu"><IconSave /> Sao lưu</button>
-            <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()} title="Khôi phục dữ liệu"><IconUpload /> Khôi phục</button>
+            <button className="sidebar-btn" onClick={() => fileInputRef.current?.click()} title="Khôi phục từ file JSON"><IconUpload /> Khôi phục</button>
             <input ref={fileInputRef} type="file" accept=".json" onChange={importBackup} style={{ display: "none" }} />
           </div>
-          <div className="sidebar-version">v1.1.0 · Cloud Sync</div>
+          <div className="sidebar-version">v1.2.0 · Trash Recovery</div>
         </div>
       </aside>
 
@@ -534,17 +657,31 @@ export default function Home() {
       <main className="main-content">
         <header className="top-bar">
           <div>
-            <h1 className="page-title">{activeTeam === "all" ? "Tổng quan" : (teams.find(t => t.value === activeTeam)?.label || activeTeam)}</h1>
-            <p className="page-subtitle">{activeTeam === "all" ? "Quản lý tất cả đội nhóm" : `Quản lý dữ liệu ${teams.find(t => t.value === activeTeam)?.label || activeTeam}`}</p>
-            <div className="update-banner">
-              <span className="update-pill">Bản update</span>
-              <p>Giao diện mới, tối ưu thao tác và trực quan hơn cho công việc tài chính.</p>
-            </div>
+            <h1 className="page-title">
+              {activeTeam === "all" ? "Tổng quan" : activeTeam === "trash" ? "Thùng rác (Đã xóa)" : (teams.find(t => t.value === activeTeam)?.label || activeTeam)}
+            </h1>
+            <p className="page-subtitle">
+              {activeTeam === "all"
+                ? "Quản lý tất cả đội nhóm"
+                : activeTeam === "trash"
+                ? "Các mục đã xóa tạm thời. Bạn có thể khôi phục lại bất kỳ lúc nào."
+                : `Quản lý dữ liệu ${teams.find(t => t.value === activeTeam)?.label || activeTeam}`}
+            </p>
           </div>
           <div className="top-bar-actions">
-            {rows.length > 0 && <button className="btn btn-ghost btn-ghost-danger" onClick={() => setConfirmDeleteAll(true)}><IconTrash /> Xóa tất cả</button>}
-            <button className="btn btn-ghost" onClick={exportCSV}><IconDownload /> Xuất CSV</button>
-            <button className="btn btn-primary" onClick={openAddModal}><IconPlus /> Thêm mới</button>
+            {activeTeam === "trash" ? (
+              deletedRows.length > 0 && (
+                <button className="btn btn-ghost btn-ghost-danger" onClick={() => setConfirmDeleteAll(true)}>
+                  <IconTrash /> Dọn sạch Thùng rác
+                </button>
+              )
+            ) : (
+              <>
+                {rows.length > 0 && <button className="btn btn-ghost btn-ghost-danger" onClick={() => setConfirmDeleteAll(true)}><IconTrash /> Xóa tất cả</button>}
+                <button className="btn btn-ghost" onClick={exportCSV}><IconDownload /> Xuất CSV</button>
+                <button className="btn btn-primary" onClick={openAddModal}><IconPlus /> Thêm mới</button>
+              </>
+            )}
           </div>
         </header>
 
@@ -582,23 +719,23 @@ export default function Home() {
                 <tr>
                   <th style={{ width: 48, textAlign: "center" }}>#</th>
                   <th>Ngày</th>
-                  {activeTeam === "all" && <th>Team</th>}
+                  {(activeTeam === "all" || activeTeam === "trash") && <th>Team</th>}
                   <th>Loại ấn phẩm</th>
                   <th style={{ textAlign: "center" }}>SL</th>
                   <th style={{ textAlign: "right" }}>Đơn giá</th>
                   <th style={{ textAlign: "right" }}>Thành tiền</th>
                   <th>Ghi chú</th>
                   <th>Trạng thái</th>
-                  <th style={{ width: 100, textAlign: "center" }}>Thao tác</th>
+                  <th style={{ width: 110, textAlign: "center" }}>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 ? (
-                  <tr><td colSpan={activeTeam === "all" ? 10 : 9}>
+                  <tr><td colSpan={(activeTeam === "all" || activeTeam === "trash") ? 10 : 9}>
                     <div className="empty-state">
                       <div className="empty-icon"><IconReceipt /></div>
-                      <h3>Chưa có dữ liệu</h3>
-                      <p>Nhấn &quot;Thêm mới&quot; để bắt đầu</p>
+                      <h3>{activeTeam === "trash" ? "Thùng rác trống" : "Chưa có dữ liệu"}</h3>
+                      <p>{activeTeam === "trash" ? "Không có mục nào đã xóa" : "Nhấn \"Thêm mới\" để bắt đầu"}</p>
                     </div>
                   </td></tr>
                 ) : filteredRows.map((row, index) => {
@@ -608,7 +745,7 @@ export default function Home() {
                     <tr key={row.id}>
                       <td style={{ textAlign: "center" }}><span className="row-num">{index + 1}</span></td>
                       <td>{row.ngay ? <span className="cell-date">{formatDate(row.ngay)}</span> : <span className="cell-empty">—</span>}</td>
-                      {activeTeam === "all" && (
+                      {(activeTeam === "all" || activeTeam === "trash") && (
                         <td>{teamInfo ? <span className="team-pill" style={{ borderColor: teamInfo.color, color: teamInfo.color }}><span className="team-dot" style={{ background: teamInfo.color }} />{teamInfo.label}</span> : <span className="cell-empty">—</span>}</td>
                       )}
                       <td>{row.loaiAnPham ? <span className={getBadgeClass(row.loaiAnPham)}>{row.loaiAnPham}</span> : <span className="cell-empty">—</span>}</td>
@@ -617,15 +754,24 @@ export default function Home() {
                       <td style={{ textAlign: "right" }}><span className="cell-total">{soTien > 0 ? formatMoney(soTien) + "đ" : "—"}</span></td>
                       <td><span className="cell-note">{row.ghiChu || "—"}</span></td>
                       <td>
-                        <button className={`status-btn ${row.thanhToan === "Đã thanh toán" ? "paid" : "unpaid"}`} onClick={() => togglePayment(row.id)}>
+                        <button className={`status-btn ${row.thanhToan === "Đã thanh toán" ? "paid" : "unpaid"}`} onClick={() => activeTeam !== "trash" && togglePayment(row.id)}>
                           <span className="status-dot" />
                           {row.thanhToan === "Đã thanh toán" ? "Đã TT" : "Chưa TT"}
                         </button>
                       </td>
                       <td style={{ textAlign: "center" }}>
                         <div className="actions-cell">
-                          <button className="action-btn edit" onClick={() => openEditModal(row)} title="Chỉnh sửa"><IconEdit /></button>
-                          <button className="action-btn delete" onClick={() => handleDelete(row.id)} title="Xóa"><IconTrash /></button>
+                          {activeTeam === "trash" ? (
+                            <>
+                              <button className="action-btn edit" onClick={() => restoreRowFromTrash(row.id)} title="Khôi phục mục này"><IconUndo /></button>
+                              <button className="action-btn delete" onClick={() => handleDelete(row.id)} title="Xóa vĩnh viễn"><IconTrash /></button>
+                            </>
+                          ) : (
+                            <>
+                              <button className="action-btn edit" onClick={() => openEditModal(row)} title="Chỉnh sửa"><IconEdit /></button>
+                              <button className="action-btn delete" onClick={() => handleDelete(row.id)} title="Chuyển vào Thùng rác"><IconTrash /></button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -777,11 +923,15 @@ export default function Home() {
           <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-body" style={{ textAlign: "center", padding: "32px" }}>
               <div className="confirm-icon"><IconTrash /></div>
-              <h3 className="confirm-title">Xóa mục này?</h3>
-              <p className="confirm-desc">Hành động này không thể hoàn tác.</p>
+              <h3 className="confirm-title">{activeTeam === "trash" ? "Xóa vĩnh viễn mục này?" : "Chuyển vào Thùng rác?"}</h3>
+              <p className="confirm-desc">
+                {activeTeam === "trash"
+                  ? "Dữ liệu sẽ bị xóa vĩnh viễn khỏi Firebase Cloud và không thể khôi phục."
+                  : "Mục này sẽ chuyển vào Thùng rác. Bạn có thể khôi phục lại bất kỳ lúc nào."}
+              </p>
               <div className="confirm-actions">
                 <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}>Hủy</button>
-                <button className="btn btn-danger" onClick={confirmDeleteRow}>Xóa</button>
+                <button className="btn btn-danger" onClick={confirmDeleteRow}>{activeTeam === "trash" ? "Xóa vĩnh viễn" : "Chuyển vào Thùng rác"}</button>
               </div>
             </div>
           </div>
@@ -794,17 +944,18 @@ export default function Home() {
           <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-body" style={{ textAlign: "center", padding: "32px" }}>
               <div className="confirm-icon"><IconTrash /></div>
-              <h3 className="confirm-title">Xóa tất cả dữ liệu?</h3>
+              <h3 className="confirm-title">{activeTeam === "trash" ? "Dọn sạch Thùng rác?" : "Chuyển tất cả vào Thùng rác?"}</h3>
               <p className="confirm-desc">
-                {activeTeam === "all"
-                  ? `Sẽ xóa toàn bộ ${rows.length} mục. Không thể hoàn tác!`
-                  : `Sẽ xóa ${rows.filter(r => r.team === activeTeam).length} mục của ${activeTeam}.`
+                {activeTeam === "trash"
+                  ? `Sẽ xóa vĩnh viễn toàn bộ ${deletedRows.length} mục trong Thùng rác.`
+                  : activeTeam === "all"
+                  ? `Sẽ chuyển ${rows.length} mục vào Thùng rác.`
+                  : `Sẽ chuyển ${rows.filter(r => r.team === activeTeam).length} mục của ${activeTeam} vào Thùng rác.`
                 }
               </p>
-              <p className="confirm-tip">Hãy sao lưu trước khi xóa!</p>
               <div className="confirm-actions">
                 <button className="btn btn-ghost" onClick={() => setConfirmDeleteAll(false)}>Hủy</button>
-                <button className="btn btn-danger" onClick={deleteAllRows}>Xóa tất cả</button>
+                <button className="btn btn-danger" onClick={deleteAllRows}>{activeTeam === "trash" ? "Dọn sạch vĩnh viễn" : "Xóa vào Thùng rác"}</button>
               </div>
             </div>
           </div>
@@ -813,7 +964,32 @@ export default function Home() {
 
       {/* Toasts */}
       <div className="toast-stack">
-        {toasts.map((t) => (<div key={t.id} className={`toast ${t.type}`}>{t.message}</div>))}
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.type}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <span>{t.message}</span>
+            {t.onAction && (
+              <button
+                onClick={() => {
+                  t.onAction?.();
+                  setToasts(prev => prev.filter(item => item.id !== t.id));
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.25)',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {t.actionLabel}
+              </button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
