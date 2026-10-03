@@ -125,6 +125,7 @@ export default function Home() {
   const [isEditModal, setIsEditModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterLoai, setFilterLoai] = useState("");
+  const [filterMonth, setFilterMonth] = useState("");
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -263,24 +264,28 @@ export default function Home() {
       const matchTeam = activeTeam === "all" || activeTeam === "trash" || row.team === activeTeam;
       const matchSearch = !searchTerm || row.ngay.toLowerCase().includes(searchTerm.toLowerCase()) || row.ghiChu.toLowerCase().includes(searchTerm.toLowerCase()) || row.loaiAnPham.toLowerCase().includes(searchTerm.toLowerCase());
       const matchLoai = !filterLoai || row.loaiAnPham === filterLoai;
-      return matchTeam && matchSearch && matchLoai;
+      const matchMonth = !filterMonth || row.ngay.startsWith(filterMonth);
+      return matchTeam && matchSearch && matchLoai && matchMonth;
     });
-  }, [rows, deletedRows, activeTeam, searchTerm, filterLoai]);
+  }, [rows, deletedRows, activeTeam, searchTerm, filterLoai, filterMonth]);
 
   
   const noteStats = useMemo(() => {
-    const stats: Record<string, { quantity: number, total: number }> = {};
+    const stats: Record<string, { quantity: number, total: number, paid: number, unpaid: number }> = {};
     filteredRows.forEach(r => {
       if (!r.ghiChu) return;
       const note = r.ghiChu.trim();
       if (!note) return;
       
       if (!stats[note]) {
-        stats[note] = { quantity: 0, total: 0 };
+        stats[note] = { quantity: 0, total: 0, paid: 0, unpaid: 0 };
       }
       const sl = typeof r.soLuong === "number" ? r.soLuong : 0;
       stats[note].quantity += sl;
-      stats[note].total += calcSoTien(r.soLuong, r.donGia);
+      const money = calcSoTien(r.soLuong, r.donGia);
+      stats[note].total += money;
+      if (r.thanhToan === "Đã thanh toán") stats[note].paid += money;
+      if (r.thanhToan === "Chưa thanh toán" || !r.thanhToan) stats[note].unpaid += money;
     });
     
     return Object.entries(stats).sort((a, b) => b[1].quantity - a[1].quantity);
@@ -294,20 +299,20 @@ export default function Home() {
     rows.forEach((r) => {
       const money = calcSoTien(r.soLuong, r.donGia);
       stats["all"].total += money;
-      if (r.thanhToan === "Đã thanh toán") stats["all"].paid++;
-      if (r.thanhToan === "Chưa thanh toán") stats["all"].unpaid++;
+      if (r.thanhToan === "Đã thanh toán") stats["all"].paid += money;
+      if (r.thanhToan === "Chưa thanh toán" || !r.thanhToan) stats["all"].unpaid += money;
       if (stats[r.team]) {
         stats[r.team].count++;
         stats[r.team].total += money;
-        if (r.thanhToan === "Đã thanh toán") stats[r.team].paid++;
-        if (r.thanhToan === "Chưa thanh toán") stats[r.team].unpaid++;
+        if (r.thanhToan === "Đã thanh toán") stats[r.team].paid += money;
+        if (r.thanhToan === "Chưa thanh toán" || !r.thanhToan) stats[r.team].unpaid += money;
       }
     });
     deletedRows.forEach((r) => {
       const money = calcSoTien(r.soLuong, r.donGia);
       stats["trash"].total += money;
-      if (r.thanhToan === "Đã thanh toán") stats["trash"].paid++;
-      if (r.thanhToan === "Chưa thanh toán") stats["trash"].unpaid++;
+      if (r.thanhToan === "Đã thanh toán") stats["trash"].paid += money;
+      if (r.thanhToan === "Chưa thanh toán" || !r.thanhToan) stats["trash"].unpaid += money;
     });
     return stats;
   }, [rows, deletedRows, teams]);
@@ -715,16 +720,17 @@ export default function Home() {
           </div>
           <div className="stat-card">
             <div className="stat-icon-box" style={{ background: "linear-gradient(135deg, #0891b2, #22d3ee)" }}><IconCheck /></div>
-            <div className="stat-info"><div className="stat-label">Đã thanh toán</div><div className="stat-value">{currentStats.paid}</div></div>
+            <div className="stat-info"><div className="stat-label">Đã thu (Thực tế)</div><div className="stat-value stat-value-money" style={{color: '#34d399'}}>{formatMoney(currentStats.paid)}đ</div></div>
           </div>
           <div className="stat-card">
             <div className="stat-icon-box" style={{ background: "linear-gradient(135deg, #dc2626, #f87171)" }}><IconClock /></div>
-            <div className="stat-info"><div className="stat-label">Chưa thanh toán</div><div className="stat-value">{currentStats.unpaid}</div></div>
+            <div className="stat-info"><div className="stat-label">Còn nợ (Chưa thu)</div><div className="stat-value stat-value-money" style={{color: '#f87171'}}>{formatMoney(currentStats.unpaid)}đ</div></div>
           </div>
         </div>
 
         <div className="filters-bar">
           <div className="search-box"><IconSearch /><input type="text" placeholder="Tìm kiếm..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+          <input type="month" className="filter-select" style={{width: 'auto', paddingRight: '12px'}} value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)} />
           <select className="filter-select" value={filterLoai} onChange={(e) => setFilterLoai(e.target.value)}>
             <option value="">Tất cả loại ấn phẩm</option>
             {productTypes.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
@@ -918,6 +924,14 @@ export default function Home() {
                         <div>
                           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>THÀNH TIỀN</div>
                           <div style={{ fontWeight: 800, color: 'var(--accent)' }}>{formatMoney(data.total)}đ</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ĐÃ THU</div>
+                          <div style={{ fontWeight: 800, color: '#34d399' }}>{formatMoney(data.paid)}đ</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>CÒN NỢ</div>
+                          <div style={{ fontWeight: 800, color: '#f87171' }}>{formatMoney(data.unpaid)}đ</div>
                         </div>
                       </div>
                     </div>
