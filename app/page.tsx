@@ -90,6 +90,7 @@ function IconCheck() { return <svg width="20" height="20" viewBox="0 0 20 20" fi
 function IconClock() { return <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" /><path d="M10 5.5V10l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>; }
 function IconCloud() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4.5 12.5h7a3 3 0 000-6 3.5 3.5 0 00-7 .5 2.5 2.5 0 000 5.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" /></svg>; }
 function IconMenu() { return <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>; }
+function IconUsers() { return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10.5 13.5v-1a2 2 0 00-2-2h-3a2 2 0 00-2 2v1M6.5 7.5a2 2 0 100-4 2 2 0 000 4zM13 13.5v-1a2 2 0 00-1-1.73M10.5 3.73A2 2 0 0113 5.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
 
 function getBadgeClass(loai: string): string {
   if (!loai) return "badge";
@@ -133,6 +134,7 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error">("syncing");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [showNoteStatsModal, setShowNoteStatsModal] = useState(false);
 
   // ===== FIREBASE REAL-TIME SYNC =====
   // Listen to rows collection
@@ -264,6 +266,25 @@ export default function Home() {
       return matchTeam && matchSearch && matchLoai;
     });
   }, [rows, deletedRows, activeTeam, searchTerm, filterLoai]);
+
+  
+  const noteStats = useMemo(() => {
+    const stats: Record<string, { quantity: number, total: number }> = {};
+    filteredRows.forEach(r => {
+      if (!r.ghiChu) return;
+      const note = r.ghiChu.trim();
+      if (!note) return;
+      
+      if (!stats[note]) {
+        stats[note] = { quantity: 0, total: 0 };
+      }
+      const sl = typeof r.soLuong === "number" ? r.soLuong : 0;
+      stats[note].quantity += sl;
+      stats[note].total += calcSoTien(r.soLuong, r.donGia);
+    });
+    
+    return Object.entries(stats).sort((a, b) => b[1].quantity - a[1].quantity);
+  }, [filteredRows]);
 
   const teamStats = useMemo(() => {
     const stats: Record<string, { count: number; total: number; paid: number; unpaid: number }> = {};
@@ -675,6 +696,7 @@ export default function Home() {
             ) : (
               <>
                 {rows.length > 0 && <button className="btn btn-ghost btn-ghost-danger" onClick={() => setConfirmDeleteAll(true)}><IconTrash /> Xóa tất cả</button>}
+                <button className="btn btn-ghost" onClick={() => setShowNoteStatsModal(true)}><IconUsers /> Thống kê Tên</button>
                 <button className="btn btn-ghost" onClick={exportCSV}><IconDownload /> Xuất CSV</button>
                 <button className="btn btn-primary" onClick={openAddModal}><IconPlus /> Thêm mới</button>
               </>
@@ -869,6 +891,47 @@ export default function Home() {
       )}
 
       {/* Team Settings Modal */}
+      
+      {/* Note Stats Modal */}
+      {showNoteStatsModal && (
+        <div className="modal-overlay" onClick={() => setShowNoteStatsModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Thống kê theo Tên / Ghi chú</h2>
+              <button className="modal-close" onClick={() => setShowNoteStatsModal(false)}><IconClose /></button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto', padding: '16px 26px' }}>
+              {noteStats.length === 0 ? (
+                <div className="empty-state" style={{ padding: '40px 0' }}>
+                  <p>Chưa có dữ liệu ghi chú để thống kê.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {noteStats.map(([note, data]) => (
+                    <div key={note} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-bright)' }}>{note}</span>
+                      <div style={{ display: 'flex', gap: '16px', textAlign: 'right' }}>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>SỐ LƯỢNG</div>
+                          <div style={{ fontWeight: 800, color: 'var(--text-white)' }}>{data.quantity}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>THÀNH TIỀN</div>
+                          <div style={{ fontWeight: 800, color: 'var(--accent)' }}>{formatMoney(data.total)}đ</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowNoteStatsModal(false)}>Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSettings && (
         <div className="modal-overlay" onClick={() => setShowSettings(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
