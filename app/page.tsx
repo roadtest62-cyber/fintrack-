@@ -262,9 +262,12 @@ export default function Home() {
     const sourceList = activeTeam === "trash" ? deletedRows : rows;
     return sourceList.filter((row) => {
       const matchTeam = activeTeam === "all" || activeTeam === "trash" || row.team === activeTeam;
-      const matchSearch = !searchTerm || row.ngay.toLowerCase().includes(searchTerm.toLowerCase()) || row.ghiChu.toLowerCase().includes(searchTerm.toLowerCase()) || row.loaiAnPham.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchLoai = !filterLoai || row.loaiAnPham === filterLoai;
-      const matchMonth = !filterMonth || row.ngay.startsWith(filterMonth);
+      const safeNgay = row.ngay || "";
+      const safeGhiChu = row.ghiChu || "";
+      const safeLoai = row.loaiAnPham || "";
+      const matchSearch = !searchTerm || safeNgay.toLowerCase().includes(searchTerm.toLowerCase()) || safeGhiChu.toLowerCase().includes(searchTerm.toLowerCase()) || safeLoai.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchLoai = !filterLoai || safeLoai === filterLoai;
+      const matchMonth = !filterMonth || safeNgay.startsWith(filterMonth);
       return matchTeam && matchSearch && matchLoai && matchMonth;
     });
   }, [rows, deletedRows, activeTeam, searchTerm, filterLoai, filterMonth]);
